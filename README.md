@@ -8,8 +8,8 @@ It's similar to /proc fs in case of its design - it's mainly read-only (you cann
 
 ## filesystem structure
 
-/instances/\<instance\_id> - RO - attributes of an EC2 instance
-/run\_instances - WO - endpoint for creating instances
+- /instances/\<instance\_id> - RO - attributes of an EC2 instance
+- /run\_instances - WO - endpoint for creating instances
 
 ### TODO
 - create /terminate\_instances WO endpoint
