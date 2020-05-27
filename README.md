@@ -16,3 +16,5 @@ It's similar to /proc fs in case of its design - it's mainly read-only (you cann
 - create /stats RO endpoint (with stats about requests made to Amazon)
 - initizalize fs with existing instances
 - better logging
+- add /refresh WO endpoint (for refreshing state of instances)
+- add options for refreshing fs within an time interval
