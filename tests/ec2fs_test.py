@@ -17,9 +17,4 @@ def test_ec2fs(mocked_ec2fs):
 
 	_, _, files = next(os.walk(f'{mocked_ec2fs}/instances'))
 
-	for file in files:
-		with open(f'{mocked_ec2fs}/instances/{file}', 'r') as fh:
-			_json = json.load(fh)
-			LOGGER.critical("%s: %r", f'{mocked_ec2fs}/instances/{file}', _json)
-
-	assert True
+	assert len(files) == 5
