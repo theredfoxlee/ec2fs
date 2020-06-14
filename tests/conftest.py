@@ -59,7 +59,8 @@ def mocked_ec2fs(mocked_ec2_proxy, mountpoint):
                 ec2fs.ec2fs(mocked_ec2_proxy),
                 str(mountpoint),
                 foreground=True,
-                allow_other=True)
+                allow_other=True,
+                attr_timeout=0)
         except Exception as e:
             LOGGER.error('FUSE failed to spawn with exception: %r', e)
             os._exit(1)
@@ -91,7 +92,7 @@ def mocked_ec2fs(mocked_ec2_proxy, mountpoint):
             shell=True,
             capture_output=True,
             check=True)
-    except CalledProcessError as e:
+    except subprocess.CalledProcessError as e:
         LOGGER.error('Failed to umount FUSE instance at "%s": %s',
                      str(mountpoint), e.stderr.decode())
         os.kill(pid, 9)  # Fuck it, use the force.
