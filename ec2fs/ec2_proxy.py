@@ -67,6 +67,9 @@ class ec2_proxy:
             LOGGER.warning('Failed to load flavors. File does not exist: "%s"',
                            ec2_proxy.FLAVORS_FILE)
 
+        LOGGER.info('Initialization finished! Ready to work :D')
+
+
     def get_cached_instances(self) -> typing.List[typing.Dict[str, dict]]:
         """ Return instances that were cached. """
         return self._instances.bulk_get()

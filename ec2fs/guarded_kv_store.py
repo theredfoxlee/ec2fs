@@ -2,6 +2,8 @@
 
 
 import collections
+import json
+import time
 import typing
 
 from readerwriterlock import rwlock
@@ -26,17 +28,17 @@ class guarded_kv_store:
         with self._guard.gen_rlock():
             return key in self._dict 
 
-    def insert(self, key: typing.Hashable, value: typing.Any) -> None:
+    def insert(self, key: typing.Hashable, value: dict) -> None:
         """ Add/Overwrite value of key. """
         with self._guard.gen_wlock():
-            self._dict[key] = value
+            self._insert(key, value)
 
     def remove(self, key: typing.Hashable) -> None:
         """ Remove value of key. """
         with self._guard.gen_wlock():
             del self._dict[key]
 
-    def get(self, key: typing.Hashable, default: typing.Any = None) -> typing.Any:
+    def get(self, key: typing.Hashable, default: typing.Any = None) -> dict:
         """ Get value of key or default if key does not exist. """
         with self._guard.gen_rlock():
             return self._dict.get(key, default)
@@ -45,7 +47,7 @@ class guarded_kv_store:
         """ Add/Overwrite given (key,value) entries. """ 
         with self._guard.gen_wlock():
             for key, value in entries:
-                self._dict[key] = value
+                self._insert(key, value)
 
     def bulk_remove(self, keys: typing.List[typing.Hashable], key_error_ok: bool = False) -> None:
         """ Remove valaues of given keys (ignore errors if `key_error_ok` specified). """ 
@@ -57,7 +59,7 @@ class guarded_kv_store:
                     if not key_error_ok:
                         raise
 
-    def bulk_get(self, keys: typing.Optional[typing.List[typing.Hashable]] = None, key_error_ok: bool = False) -> typing.List[typing.Any]:
+    def bulk_get(self, keys: typing.Optional[typing.List[typing.Hashable]] = None, key_error_ok: bool = False) -> typing.List[dict]:
         """ Get vlue of given keys (ignore errors if `key_error_ok` specified). """
         with self._guard.gen_rlock():
             if keys:
@@ -77,6 +79,26 @@ class guarded_kv_store:
         with self._guard.gen_wlock():
             for key, value in entries:
                 self._update(self._dict[key], value)
+
+    def _insert(self, key: typing.Hashable, value: dict) -> None:
+        """ Insert/Overwrite given (key, value) entry nad setup timestamps. """
+        timestamp = time.time()
+        raw_data = json.dumps(value, default=str).encode()
+        if key in self._dict:
+            self._dict[key]['data'] = value
+            self._dict[key]['raw_data'] = raw_data
+            self._dict[key]['metadata']['@updated_timestamp'] = timestamp
+            self._dict[key]['metadata']['size'] = len(raw_data)
+        else:
+            self._dict[key] = {
+                'data': value,
+                'raw_data': raw_data,
+                'metadata': {
+                    '@created_timestamp': timestamp,
+                    '@updated_timestamp': timestamp,
+                    'size': len(raw_data)
+                }
+            }
 
     def _update(self, d, u):
         """ Update nested dict - taken from stackoverflow. """

@@ -80,15 +80,6 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         self._create_file('/refresh')
         self._mkdir('/requests')
 
-        #for instance_id, instance in self._ec2.get_cached_instances():
-        #    self._create_file(f'/instances/{instance_id}', data=json.dumps(instance))
-
-        #for image_id, image in self._ec2.get_cached_images():
-        #    self._create_file(f'/images/{image_id}', data=json.dumps(image))
-
-        #for request_id, request in self._ec2.get_cached_requests():
-        #    self._create_file(f'/requests/{request_id}', data=json.dumps(request))
-
         self._create_file('/flavors', data='\n'.join(
             flavor for flavor in self._ec2.get_cached_flavors()).encode())
 
@@ -97,19 +88,46 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         if dirname == '/instances':
             try:
                 fh = self._ec2.get_cached_instances()[basename]
-                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
+                return {
+                    'st_mode': stat.S_IFREG | 0o755,
+                    'st_nlink': 1,
+                    'st_size': fh['metadata']['size'],
+                    'st_ctime': fh['metadata']['@created_timestamp'],
+                    'st_mtime': fh['metadata']['@updated_timestamp'],
+                    'st_atime': fh['metadata']['@updated_timestamp'],
+                    'st_uid': os.getuid(),
+                    'st_gid': os.getgid()
+                }
             except KeyError:
                 raise fuse.FuseOSError(errno.ENOENT)
         elif dirname == '/images':
             try:
                 fh = self._ec2.get_cached_images()[basename]
-                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
+                return {
+                    'st_mode': stat.S_IFREG | 0o755,
+                    'st_nlink': 1,
+                    'st_size': fh['metadata']['size'],
+                    'st_ctime': fh['metadata']['@created_timestamp'],
+                    'st_mtime': fh['metadata']['@updated_timestamp'],
+                    'st_atime': fh['metadata']['@updated_timestamp'],
+                    'st_uid': os.getuid(),
+                    'st_gid': os.getgid()
+                }
             except KeyError:
                 raise fuse.FuseOSError(errno.ENOENT)
         elif dirname == '/requests':
             try:
                 fh = self._ec2.get_cached_requests()[basename]
-                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
+                return {
+                    'st_mode': stat.S_IFREG | 0o755,
+                    'st_nlink': 1,
+                    'st_size': fh['metadata']['size'],
+                    'st_ctime': fh['metadata']['@created_timestamp'],
+                    'st_mtime': fh['metadata']['@updated_timestamp'],
+                    'st_atime': fh['metadata']['@updated_timestamp'],
+                    'st_uid': os.getuid(),
+                    'st_gid': os.getgid()
+                }
             except KeyError:
                 raise fuse.FuseOSError(errno.ENOENT)
         elif path not in self._fh:
@@ -142,15 +160,15 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         #else:
         dirname, basename = os.path.split(path)
         if dirname == '/instances':
-            return json.dumps(self._ec2.get_cached_instances()[basename], default=str).encode()
+            return self._ec2.get_cached_instances()[basename]['raw_data'][offset:offset+size]
         elif dirname == '/images':
-            return json.dumps(self._ec2.get_cached_images()[basename], default=str).encode()
+            return self._ec2.get_cached_images()[basename]['raw_data'][offset:offset+size]
         elif dirname == '/requests':
-            return json.dumps(self._ec2.get_cached_requests()[basename], default=str).encode()
+            return self._ec2.get_cached_requests()[basename]['raw_data'][offset:offset+size]
         elif path == '/flavors':
-            return self._fh[path].data
+            return self._fh[path].data[offset:offset+size]
         else:
-            return json.dumps(self._fh[path].data, default=str).encode()
+            return json.dumps(self._fh[path].data, default=str).encode()[offset:offset+size]
 
     def write(self, path: str, data: bytes, offset: int, fh: int) -> int:
         if path == '/refresh':

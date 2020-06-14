@@ -67,7 +67,7 @@ def test_terminate_instances(mocked_ec2_proxy):
     assert status_code == 200
     assert request_id in mocked_ec2_proxy.get_cached_requests()
 
-    instance_metadata = mocked_ec2_proxy.get_cached_instances()[instance_id]
+    instance_metadata = mocked_ec2_proxy.get_cached_instances()[instance_id]['data']
 
     assert 48 == instance_metadata['State']['Code']
     assert 'terminated' == instance_metadata['State']['Name']
