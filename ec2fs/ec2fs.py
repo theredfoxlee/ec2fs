@@ -3,6 +3,7 @@
 
 import errno
 import json
+import logging
 import os
 import stat
 import time
@@ -10,6 +11,9 @@ import typing
 
 
 import fuse
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ec2fs(fuse.LoggingMixIn, fuse.Operations):
@@ -74,13 +78,16 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         self._create_file('/actions/describe_images')
 
         self._create_file('/refresh')
-        self._create_file('/requests')
+        self._mkdir('/requests')
 
-        for instance_id, instance in self._ec2.get_cached_instances():
-            self._create_file(f'/instances/{instance_id}', data=json.dumps(instance))
+        #for instance_id, instance in self._ec2.get_cached_instances():
+        #    self._create_file(f'/instances/{instance_id}', data=json.dumps(instance))
 
-        for image_id, image in self._ec2.get_cached_images():
-            self._create_file(f'/images/{image_id}', data=json.dumps(image))
+        #for image_id, image in self._ec2.get_cached_images():
+        #    self._create_file(f'/images/{image_id}', data=json.dumps(image))
+
+        #for request_id, request in self._ec2.get_cached_requests():
+        #    self._create_file(f'/requests/{request_id}', data=json.dumps(request))
 
         self._create_file('/flavors', data='\n'.join(
             flavor for flavor in self._ec2.get_cached_flavors()).encode())
@@ -90,13 +97,19 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         if dirname == '/instances':
             try:
                 fh = self._ec2.get_cached_instances()[basename]
-                return ec2fs.file_entry(data=json.dumps(fh, default=str), mode=0o755).attrs
+                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
             except KeyError:
                 raise fuse.FuseOSError(errno.ENOENT)
         elif dirname == '/images':
             try:
                 fh = self._ec2.get_cached_images()[basename]
-                return ec2fs.file_entry(data=json.dumps(fh, default=str), mode=0o755).attrs
+                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
+            except KeyError:
+                raise fuse.FuseOSError(errno.ENOENT)
+        elif dirname == '/requests':
+            try:
+                fh = self._ec2.get_cached_requests()[basename]
+                return ec2fs.file_entry(data=json.dumps(fh, default=str).encode(), mode=0o755).attrs
             except KeyError:
                 raise fuse.FuseOSError(errno.ENOENT)
         elif path not in self._fh:
@@ -108,6 +121,8 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
             return ['.', '..'] + list(self._ec2.get_cached_instances().keys())
         elif path == '/images':
             return ['.', '..'] + list(self._ec2.get_cached_images().keys())
+        elif path == '/requests':
+            return ['.', '..'] + list(self._ec2.get_cached_requests().keys())
         else:
             return ['.', '..'] + self._fh[path].files
 
@@ -121,17 +136,21 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
     #    return self._fh[path].xattrs.keys()
 
     def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
-        if fh:
-            return json.dumps(json.dumps(fh.data)).encode()
+        #if fh:
+        #    pass
+        #    return json.dumps(json.dumps(fh.data), default=str).encode()
+        #else:
+        dirname, basename = os.path.split(path)
+        if dirname == '/instances':
+            return json.dumps(self._ec2.get_cached_instances()[basename], default=str).encode()
+        elif dirname == '/images':
+            return json.dumps(self._ec2.get_cached_images()[basename], default=str).encode()
+        elif dirname == '/requests':
+            return json.dumps(self._ec2.get_cached_requests()[basename], default=str).encode()
+        elif path == '/flavors':
+            return self._fh[path].data
         else:
-            dirname, basename = os.path.split(path)
-            if dirname == '/instances':
-                return json.dumps(self._ec2.get_cached_instances()[basename], sort_keys=True, default=str).encode()
-            elif dirname == '/images':
-                return json.dumps(self._ec2.get_cached_images()[basename], sort_keys=True, default=str).encode()
-            else:
-                return json.dumps(self._fh[path].data,
-                                  sort_keys=True, default=str).encode()
+            return json.dumps(self._fh[path].data, default=str).encode()
 
     def write(self, path: str, data: bytes, offset: int, fh: int) -> int:
         if path == '/refresh':
@@ -150,6 +169,9 @@ class ec2fs(fuse.LoggingMixIn, fuse.Operations):
         return len(data)
 
     def truncate(self, path: str, length: int, fh: int = None) -> None:
+        pass
+
+    def utimens(self, path, times=None):
         pass
 
     def _mkdir(self, name, mode: int = 0o755):
