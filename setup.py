@@ -15,7 +15,7 @@ def _get_requirements():
 setup(
     name='ec2fs',
     version='0.1.0',
-    description='<description>',
+    description='Simple filesystem interface for AWS EC2 service.',
     author='Kamil Janiec',
     author_email='kamil.p.janiec@gmail.com',
     packages=['ec2fs'],

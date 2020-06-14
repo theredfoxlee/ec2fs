@@ -1,5 +1,5 @@
-boto3
-expiringdict
-readerwriterlock
-fusepy
-moto
+boto3==1.14.2
+expiringdict==1.2.1
+readerwriterlock==1.0.7
+fusepy==3.0.1
+moto==1.3.14
