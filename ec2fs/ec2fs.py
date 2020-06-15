@@ -1,6 +1,6 @@
 """ This module contains ec2fs class. """
 
-
+import abc
 import errno
 import json
 import logging
@@ -11,193 +11,163 @@ import typing
 
 
 import fuse
+from readerwriterlock import rwlock
 
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ec2fs(fuse.LoggingMixIn, fuse.Operations):
-    """ ec2fs is an communication layer between fs and aws. """
+    """ ec2fs i a simple filesystem interface for AWS EC2 service. """
 
-    class dir_entry:
+    def __init__(self, ec2_proxy: 'ec2fs.ec2_proxy') -> None:
+        self._ec2_proxy = ec2_proxy
 
-        def __init__(self, mode):
-            self.attrs: dict = self._get_dir_attrs(mode=mode)
-            self.files: typing.List[str] = []
+        flavors_data = '\n'.join(flavor for flavor in self._ec2_proxy.get_cached_flavors() if flavor)
+        flavors_data = flavors_data.encode()
 
-        def _get_dir_attrs(self, mode):
-            now = time.time()
-            return {
-                'st_mode': stat.S_IFDIR | mode,
-                'st_nlink': 2,
-                'st_size': 4096,
-                'st_ctime': now,
-                'st_mtime': now,
-                'st_atime': now,
-                'st_uid': os.getuid(),
-                'st_gid': os.getgid()
+        #LOGGER.critical('flavors: %r', flavors_data)
+
+        flavors_attrs = ec2fs._file_attrs_factory()
+        flavors_attrs['st_size'] = len(flavors_data)
+
+        self._fh = {
+            '/': {
+                'attrs': ec2fs._dir_attrs_factory(),
+                'files': ['instances', 'images', 'requests', 'flavors', 'actions', 'refresh'],
+            },
+            '/instances': {
+                'attrs': ec2fs._dir_attrs_factory(),
+                'files_callback': lambda: list(self._ec2_proxy.get_cached_instances().keys())
+            },
+            '/images': {
+                'attrs': ec2fs._dir_attrs_factory(),
+                'files_callback': lambda: list(self._ec2_proxy.get_cached_images().keys())
+            },
+            '/requests': {
+                'attrs': ec2fs._dir_attrs_factory(),
+                'files_callback': lambda: list(self._ec2_proxy.get_cached_requests().keys())
+            },
+            '/flavors': {
+                'attrs': flavors_attrs,
+                'raw_data': flavors_data,
+                'write_callback': None
+            },
+            '/actions': {
+                'attrs': ec2fs._dir_attrs_factory(),
+                'files': ['run_instances', 'describe_instances', 'terminate_instances', 'describe_images']
+            },
+            '/actions/run_instances': {
+                'attrs': ec2fs._file_attrs_factory(),
+                'raw_data': b'',
+                'write_callback': lambda d: self._ec2_proxy.run_instances(**d)
+            },
+            '/actions/describe_instances': {
+                'attrs': ec2fs._file_attrs_factory(),
+                'raw_data': b'',
+                'write_callback': lambda d: self._ec2_proxy.describe_instances(**d)
+            },
+            '/actions/terminate_instances': {
+                'attrs': ec2fs._file_attrs_factory(),
+                'raw_data': b'',
+                'write_callback': lambda d: self._ec2_proxy.terminate_instances(**d)
+            },
+            '/actions/describe_images': {
+                'attrs': ec2fs._file_attrs_factory(),
+                'raw_data': b'',
+                'write_callback': lambda d: self._ec2_proxy.describe_images(**d)
+            },
+            '/refresh': {
+                'attrs': ec2fs._file_attrs_factory(),
+                'raw_data': b'',
+                'write_callback': lambda: self._ec2_proxy.describe_instances()
             }
+        }
 
-    class file_entry:
-
-        def __init__(self, data, mode):
-            self.attrs: dict = self._get_file_attrs(size=len(data), 
-                                                    mode=mode)
-            self.data: bytes = data
-
-        def update_data(self, data: bytes):
-            self.data = data
-            self.attrs['st_size'] = len(data)
-
-        def _get_file_attrs(self, size, mode):
-            now = time.time()
-            return {
-                'st_mode': stat.S_IFREG | mode,
-                'st_nlink': 1,
-                'st_size': size,
-                'st_ctime': now,
-                'st_mtime': now,
-                'st_atime': now,
-                'st_uid': os.getuid(),
-                'st_gid': os.getgid()
-            }
-
-
-    def __init__(self, ec2: 'ec2fs.ec2_proxy'):
-        self._ec2 = ec2
-
-        self._fh = {'/': ec2fs.dir_entry(mode=0o755)}
-
-        self._mkdir('/instances')
-        self._mkdir('/images')
-        self._mkdir('/actions')
-
-        self._create_file('/actions/run_instances')
-        self._create_file('/actions/describe_instances')
-        self._create_file('/actions/terminate_instances')
-        self._create_file('/actions/describe_images')
-
-        self._create_file('/refresh')
-        self._mkdir('/requests')
-
-        self._create_file('/flavors', data='\n'.join(
-            flavor for flavor in self._ec2.get_cached_flavors()).encode())
-
-    def getattr(self, path: str, fh: int = None) -> None:
-        dirname, basename = os.path.split(path)
-        if dirname == '/instances':
-            try:
-                fh = self._ec2.get_cached_instances()[basename]
-                return {
-                    'st_mode': stat.S_IFREG | 0o755,
-                    'st_nlink': 1,
-                    'st_size': fh['metadata']['size'],
-                    'st_ctime': fh['metadata']['@created_timestamp'],
-                    'st_mtime': fh['metadata']['@updated_timestamp'],
-                    'st_atime': fh['metadata']['@updated_timestamp'],
-                    'st_uid': os.getuid(),
-                    'st_gid': os.getgid()
-                }
-            except KeyError:
-                raise fuse.FuseOSError(errno.ENOENT)
-        elif dirname == '/images':
-            try:
-                fh = self._ec2.get_cached_images()[basename]
-                return {
-                    'st_mode': stat.S_IFREG | 0o755,
-                    'st_nlink': 1,
-                    'st_size': fh['metadata']['size'],
-                    'st_ctime': fh['metadata']['@created_timestamp'],
-                    'st_mtime': fh['metadata']['@updated_timestamp'],
-                    'st_atime': fh['metadata']['@updated_timestamp'],
-                    'st_uid': os.getuid(),
-                    'st_gid': os.getgid()
-                }
-            except KeyError:
-                raise fuse.FuseOSError(errno.ENOENT)
-        elif dirname == '/requests':
-            try:
-                fh = self._ec2.get_cached_requests()[basename]
-                return {
-                    'st_mode': stat.S_IFREG | 0o755,
-                    'st_nlink': 1,
-                    'st_size': fh['metadata']['size'],
-                    'st_ctime': fh['metadata']['@created_timestamp'],
-                    'st_mtime': fh['metadata']['@updated_timestamp'],
-                    'st_atime': fh['metadata']['@updated_timestamp'],
-                    'st_uid': os.getuid(),
-                    'st_gid': os.getgid()
-                }
-            except KeyError:
-                raise fuse.FuseOSError(errno.ENOENT)
-        elif path not in self._fh:
+    def getattr(self, path: str, fh: int = None) -> dict:
+        LOGGER.debug('getattr: %r', path)
+        resource = self._get_resource(path)
+        if resource:
+            resource_attrs = ec2fs._file_attrs_factory()
+            resource_attrs['st_size'] = resource['metadata']['size']
+            resource_attrs['st_ctime'] = resource['metadata']['@timestamp']
+            resource_attrs['st_mtime'] = resource['metadata']['@timestamp']
+            resource_attrs['st_atime'] = resource['metadata']['@timestamp']
+            return resource_attrs
+        elif path in self._fh:
+            return self._fh[path]['attrs']
+        else:
             raise fuse.FuseOSError(errno.ENOENT)
-        return self._fh[path].attrs
 
     def readdir(self, path: str, fh: int) -> typing.List[str]:
-        if path == '/instances':
-            return ['.', '..'] + list(self._ec2.get_cached_instances().keys())
-        elif path == '/images':
-            return ['.', '..'] + list(self._ec2.get_cached_images().keys())
-        elif path == '/requests':
-            return ['.', '..'] + list(self._ec2.get_cached_requests().keys())
+        LOGGER.debug('readdir: %r', path)
+        if 'files_callback' in self._fh[path]:
+            return ['.', '..'] + self._fh[path]['files_callback']()
         else:
-            return ['.', '..'] + self._fh[path].files
-
-    #def getxattr(self, path: str, name: str, position: int = 0) -> bytes:
-    #    try:
-    #        return str(self._fh[path].xattrs[name]).encode()
-    #    except KeyError:
-    #        return ''
-    
-    #def listxattr(self, path: str) -> typing.List[str]:
-    #    return self._fh[path].xattrs.keys()
+            return ['.', '..'] + self._fh[path]['files']
 
     def read(self, path: str, size: int, offset: int, fh: int) -> bytes:
-        #if fh:
-        #    pass
-        #    return json.dumps(json.dumps(fh.data), default=str).encode()
-        #else:
-        dirname, basename = os.path.split(path)
-        if dirname == '/instances':
-            return self._ec2.get_cached_instances()[basename]['raw_data'][offset:offset+size]
-        elif dirname == '/images':
-            return self._ec2.get_cached_images()[basename]['raw_data'][offset:offset+size]
-        elif dirname == '/requests':
-            return self._ec2.get_cached_requests()[basename]['raw_data'][offset:offset+size]
-        elif path == '/flavors':
-            return self._fh[path].data[offset:offset+size]
+        LOGGER.debug('read: %r', path)
+        resource = self._get_resource(path)
+        if resource:
+            return resource['raw_data'][offset:offset+size]
         else:
-            return json.dumps(self._fh[path].data, default=str).encode()[offset:offset+size]
+            return self._fh[path]['raw_data'][offset:offset+size]
 
     def write(self, path: str, data: bytes, offset: int, fh: int) -> int:
-        if path == '/refresh':
-            self._ec2.describe_instances()
-            self._ec2.describe_images()
+        LOGGER.debug('write: %r', path)
+        write_callback = self._fh[path]['write_callback']
+        if write_callback:
+            write_callback(json.loads(data))
         else:
-            _json = json.loads(data)
-            if path == '/actions/run_instances':
-                self._ec2.run_instances(**_json)
-            elif path == '/actions/describe_instances':
-                self._ec2.describe_instances(**_json)
-            elif path == '/actions/terminate_instances':
-                self._ec2.terminate_instances(**_json)
-            elif path == '/actions/describe_images':
-                self._ec2.describe_images(**_json)
+            LOGGER.warning('Writing to "%s" has no effect.', path)
         return len(data)
 
     def truncate(self, path: str, length: int, fh: int = None) -> None:
         pass
 
-    def utimens(self, path, times=None):
-        pass
+    def _get_resource(self, path: str) -> typing.Optional[dict]:
+        dirname, basename = os.path.split(path)
+        try:
+            if dirname == '/instances':
+                return self._ec2_proxy.get_cached_instance(basename)
+            elif dirname == '/images':
+                return self._ec2_proxy.get_cached_image(basename)
+            elif dirname == '/requests':
+                return self._ec2_proxy.get_cached_request(basename)
+            else:
+                return None
+        except KeyError:
+            LOGGER.error('File missing from cache: %s', path)
+            raise fuse.FuseOSError(errno.ENOENT)
 
-    def _mkdir(self, name, mode: int = 0o755):
-        dirname, basename = os.path.split(name)
-        self._fh[dirname].files.append(basename)
-        self._fh[name] = ec2fs.dir_entry(mode=mode)
+    @staticmethod
+    def _attrs_factory(st_mode: int, st_nlink: int, st_size: int) -> dict:
+        now = time.time()
+        attrs = {
+            'st_mode': st_mode,
+            'st_nlink': st_nlink,
+            'st_size': st_size,
+            'st_ctime': now,
+            'st_mtime': now,
+            'st_atime': now,
+            'st_uid': os.getuid(),
+            'st_gid': os.getgid()
+        }
+        return attrs
 
-    def _create_file(self, name:str , data: bytes = b'', mode: int = 0o755):
-        dirname, basename = os.path.split(name)
-        self._fh[dirname].files.append(basename)
-        self._fh[name] = ec2fs.file_entry(data=data, mode=mode)
+    @staticmethod
+    def _dir_attrs_factory():
+        return ec2fs._attrs_factory(
+            st_mode=stat.S_IFDIR | 0o755,
+            st_nlink=2,
+            st_size=4096
+        )
+
+    @staticmethod
+    def _file_attrs_factory():
+        return ec2fs._attrs_factory(
+            st_mode=stat.S_IFREG| 0o755,
+            st_nlink=1,
+            st_size=0
+        )

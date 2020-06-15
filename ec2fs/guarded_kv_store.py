@@ -94,8 +94,7 @@ class guarded_kv_store:
                 'data': value,
                 'raw_data': raw_data,
                 'metadata': {
-                    '@created_timestamp': timestamp,
-                    '@updated_timestamp': timestamp,
+                    '@timestamp': timestamp,
                     'size': len(raw_data)
                 }
             }
