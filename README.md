@@ -23,7 +23,7 @@ Although, you can communicate with Amazon EC2 API directly (using raw XML docume
 
 ### Installation
 
-**REQUIREMENTS -> ** PYTHON 3.6+
+**REQUIREMENTS** -> PYTHON 3.6+
 
 ``` bash
 git clone https://github.com/theredfoxlee/ec2fs
