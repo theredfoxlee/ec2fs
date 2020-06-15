@@ -2,6 +2,8 @@
 
 ec2fs is a simple FUSE interface for Amazaon EC2 service.
 
+usage: `python3 -m ec2fs [-h] [-d] [--mock] [--background] [--region-name REGION_NAME] mount`
+
 ## Bigger picture
 
 Amazon EC2 (Elastic Compute Cloud) allows users to create Virutal Machines on servers provided and maintained by Amazon Web Services.
