@@ -123,7 +123,7 @@ grep small ./flavors
 [10] How to see cached raw response from Amazon EC2 service?
 
 ``` bash
-ja . requests/request_ida 
+jq . requests/request_id
 ```
 
 [11] How to list all cached responses:
