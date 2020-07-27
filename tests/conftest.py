@@ -35,6 +35,12 @@ def not_mocked_ec2_proxy():
     return ec2_proxy.ec2_proxy()
 
 @pytest.fixture
+def mocked_ec2_client(ec2_mock):
+    ec2_mock.start()
+    yield boto3.client('ec2', region_name='us-east-2')
+    ec2_mock.stop()
+
+@pytest.fixture
 def mocked_ec2_proxy(ec2_mock):
     ec2_mock.start()
     yield ec2_proxy.ec2_proxy()
